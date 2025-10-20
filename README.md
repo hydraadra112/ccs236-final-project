@@ -126,6 +126,7 @@ This will be the repository of my CCS 250 final project, which is a CLI utility.
 - `unsqueeze process --kill <name_or_pid>` - Kills processes with confirmation
 
 #### Service Operations
+- `unsqueeze service --list [running|stopped]` - Shows either running or stopped services 
 - `unsqueeze service --status <name>` - Shows service status (fuzzy search)
 - `unsqueeze service --stop <exact_name>` - Stops a service
 - `unsqueeze service --disable <exact_name>` - Disables a service
