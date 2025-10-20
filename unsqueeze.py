@@ -1,38 +1,25 @@
 #!/usr/bin/env python3
-"""
-unsqueeze - Windows System Maintenance Utility
-"""
-
 import os
 import sys
 import shutil
-import psutil
-import argparse
-from pathlib import Path
 import subprocess
-import ctypes
-import winreg
+from pathlib import Path
 
-def is_admin():
-    """Check if script is running with admin privileges"""
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
 
 def format_size(bytes_size):
-    """Convert bytes to human readable format"""
+    """Convert bytes to human-readable format"""
     for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
         if bytes_size < 1024.0:
-            return f"{bytes_size:.1f} {unit}"
+            return f"{bytes_size:.2f} {unit}"
         bytes_size /= 1024.0
-    return f"{bytes_size:.1f} PB"
+    return f"{bytes_size:.2f} PB"
 
-def get_folder_size(path):
+
+def get_folder_size(folder_path):
     """Calculate total size of a folder"""
     total = 0
     try:
-        for entry in os.scandir(path):
+        for entry in os.scandir(folder_path):
             try:
                 if entry.is_file(follow_symlinks=False):
                     total += entry.stat().st_size
@@ -44,99 +31,110 @@ def get_folder_size(path):
         pass
     return total
 
+
 def analyze_temp():
     """Analyze temp folder sizes"""
     user_temp = os.environ.get('TEMP', '')
     win_temp = os.path.join(os.environ.get('windir', 'C:\\Windows'), 'Temp')
     
-    print("Analyzing temp folders...")
-    user_size = get_folder_size(user_temp) if user_temp else 0
-    win_size = get_folder_size(win_temp)
-    total = user_size + win_size
+    user_size = get_folder_size(user_temp) if user_temp and os.path.exists(user_temp) else 0
+    win_size = get_folder_size(win_temp) if os.path.exists(win_temp) else 0
+    total_size = user_size + win_size
     
-    print(f"User Temp: {format_size(user_size)} | Windows Temp: {format_size(win_size)} | Total: {format_size(total)}")
+    print(f"User Temp: {format_size(user_size)} | Windows Temp: {format_size(win_size)} | Total: {format_size(total_size)}")
+
+
+def delete_folder_contents(folder_path):
+    """Delete all contents of a folder, skipping locked files"""
+    deleted_size = 0
+    if not os.path.exists(folder_path):
+        return deleted_size
+    
+    for entry in os.listdir(folder_path):
+        entry_path = os.path.join(folder_path, entry)
+        try:
+            if os.path.isfile(entry_path) or os.path.islink(entry_path):
+                size = os.path.getsize(entry_path)
+                os.unlink(entry_path)
+                deleted_size += size
+            elif os.path.isdir(entry_path):
+                size = get_folder_size(entry_path)
+                shutil.rmtree(entry_path, ignore_errors=True)
+                deleted_size += size
+        except (PermissionError, FileNotFoundError, OSError):
+            continue
+    return deleted_size
+
 
 def clean_temp():
-    """Clean temp folders"""
-    user_temp = os.environ.get('TEMP', '')
-    win_temp = os.path.join(os.environ.get('windir', 'C:\\Windows'), 'Temp')
-    
-    response = input("Delete all files from user and Windows temp folders? (y/n): ").lower()
+    """Clean temp folders with confirmation"""
+    response = input("Delete all files from user and Windows temp folders? (y/n): ").lower().strip()
     if response != 'y':
         print("Operation cancelled.")
         return
     
-    deleted_size = 0
+    user_temp = os.environ.get('TEMP', '')
+    win_temp = os.path.join(os.environ.get('windir', 'C:\\Windows'), 'Temp')
     
-    for temp_path in [user_temp, win_temp]:
-        if not temp_path or not os.path.exists(temp_path):
-            continue
-            
-        for entry in os.scandir(temp_path):
-            try:
-                size = 0
-                if entry.is_file(follow_symlinks=False):
-                    size = entry.stat().st_size
-                    os.remove(entry.path)
-                elif entry.is_dir(follow_symlinks=False):
-                    size = get_folder_size(entry.path)
-                    shutil.rmtree(entry.path, ignore_errors=True)
-                deleted_size += size
-            except (PermissionError, FileNotFoundError, OSError):
-                continue
+    total_deleted = 0
+    if user_temp and os.path.exists(user_temp):
+        total_deleted += delete_folder_contents(user_temp)
+    if os.path.exists(win_temp):
+        total_deleted += delete_folder_contents(win_temp)
     
-    print(f"{format_size(deleted_size)} of temp files deleted.")
+    print(f"{format_size(total_deleted)} of temp files deleted.")
+
 
 def analyze_bin():
     """Analyze Recycle Bin size"""
     try:
-        # Use PowerShell to get Recycle Bin size
-        ps_cmd = "(New-Object -ComObject Shell.Application).NameSpace(0xA).Items() | Measure-Object -Property Size -Sum | Select-Object -ExpandProperty Sum"
-        result = subprocess.run(['powershell', '-Command', ps_cmd], 
-                              capture_output=True, text=True, timeout=30)
-        
+        result = subprocess.run(
+            ['powershell', '-Command', 
+             "(New-Object -ComObject Shell.Application).NameSpace(0xA).Items() | Measure-Object -Property Size -Sum | Select-Object -ExpandProperty Sum"],
+            capture_output=True, text=True, timeout=30
+        )
         if result.returncode == 0 and result.stdout.strip():
-            size = int(result.stdout.strip() or 0)
+            size = int(result.stdout.strip())
             print(f"Recycle Bin size: {format_size(size)}")
         else:
             print("Recycle Bin size: 0 B")
-    except Exception as e:
-        print("Recycle Bin size: Unable to determine")
+    except Exception:
+        print("Error: Could not analyze Recycle Bin.")
+
 
 def empty_bin():
     """Empty Recycle Bin"""
     try:
-        subprocess.run(['powershell', '-Command', 
-                       'Clear-RecycleBin -Force -ErrorAction SilentlyContinue'],
-                      timeout=30)
+        subprocess.run(
+            ['powershell', '-Command', 
+             "Clear-RecycleBin -Force -ErrorAction SilentlyContinue"],
+            capture_output=True, timeout=30
+        )
         print("Recycle Bin emptied.")
-    except Exception as e:
-        print(f"Error emptying Recycle Bin: {e}")
+    except Exception:
+        print("Error: Could not empty Recycle Bin.")
+
 
 def find_large():
-    """Find and delete large files in Downloads"""
-    downloads = Path(os.environ.get('USERPROFILE', '')) / 'Downloads'
-    
-    if not downloads.exists():
-        print("Downloads folder not found.")
+    """Find and optionally delete large files in Downloads"""
+    downloads = os.path.join(os.environ.get('USERPROFILE', ''), 'Downloads')
+    if not os.path.exists(downloads):
+        print("Error: Downloads folder not found.")
         return
     
-    print("Scanning Downloads folder...")
     files = []
-    
     try:
-        for file in downloads.rglob('*'):
-            if file.is_file():
+        for entry in os.scandir(downloads):
+            if entry.is_file():
                 try:
-                    size = file.stat().st_size
-                    files.append((size, file))
+                    files.append((entry.path, entry.stat().st_size, entry.name))
                 except (PermissionError, FileNotFoundError, OSError):
                     continue
-    except Exception as e:
-        print(f"Error scanning: {e}")
+    except (PermissionError, OSError):
+        print("Error: Cannot access Downloads folder.")
         return
     
-    files.sort(reverse=True, key=lambda x: x[0])
+    files.sort(key=lambda x: x[1], reverse=True)
     top_10 = files[:10]
     
     if not top_10:
@@ -144,157 +142,204 @@ def find_large():
         return
     
     print("\nTop 10 largest files in Downloads:")
-    for i, (size, file) in enumerate(top_10, 1):
-        print(f"[{i}] {format_size(size)} - {file.name}")
+    for i, (path, size, name) in enumerate(top_10, 1):
+        print(f"[{i}] {format_size(size)} - {name}")
     
-    choice = input("\nEnter file number to delete, 'a' to delete all 10, or 'q' to quit: ").lower()
+    print()
+    choice = input("Enter file number to delete, 'a' to delete all 10, or 'q' to quit: ").lower().strip()
     
     if choice == 'q':
         return
     elif choice == 'a':
-        for _, file in top_10:
+        for path, _, name in top_10:
             try:
-                file.unlink()
-            except Exception:
+                os.remove(path)
+            except (PermissionError, FileNotFoundError, OSError):
                 pass
-        print("All 10 files deleted.")
+        print(f"All {len(top_10)} files deleted.")
+    elif choice.isdigit():
+        idx = int(choice) - 1
+        if 0 <= idx < len(top_10):
+            path, _, name = top_10[idx]
+            try:
+                os.remove(path)
+                print(f"{name} deleted.")
+            except (PermissionError, FileNotFoundError, OSError):
+                print(f"Error: Could not delete {name}")
+        else:
+            print("Invalid file number.")
     else:
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(top_10):
-                file = top_10[idx][1]
-                file.unlink()
-                print(f"{file.name} deleted.")
-            else:
-                print("Invalid number.")
-        except ValueError:
-            print("Invalid input.")
-        except Exception as e:
-            print(f"Error deleting file: {e}")
+        print("Invalid choice.")
+
 
 def process_top():
     """Show top processes by CPU and RAM"""
-    processes = []
-    
-    for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_info']):
-        try:
-            processes.append(proc.info)
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            continue
-    
-    # Get CPU usage over 0.1 second interval
-    psutil.cpu_percent(interval=0.1)
-    for proc in processes:
-        try:
-            p = psutil.Process(proc['pid'])
-            proc['cpu_percent'] = p.cpu_percent(interval=0.1)
-        except:
-            proc['cpu_percent'] = 0
-    
-    cpu_sorted = sorted(processes, key=lambda x: x.get('cpu_percent', 0), reverse=True)[:5]
-    ram_sorted = sorted(processes, key=lambda x: x.get('memory_info', {}).get('rss', 0) if x.get('memory_info') else 0, reverse=True)[:5]
-    
-    print("\nTop 5 CPU:")
-    for proc in cpu_sorted:
-        print(f"PID: {proc['pid']} | Name: {proc['name']} | CPU: {proc.get('cpu_percent', 0):.1f}%")
-    
-    print("\nTop 5 RAM:")
-    for proc in ram_sorted:
-        mem = proc.get('memory_info', {}).get('rss', 0) if proc.get('memory_info') else 0
-        print(f"PID: {proc['pid']} | Name: {proc['name']} | RAM: {format_size(mem)}")
-
-def process_kill(name_or_pid):
-    """Kill a process by name or PID"""
-    matches = []
-    
-    # Try as PID first
     try:
-        pid = int(name_or_pid)
-        try:
-            proc = psutil.Process(pid)
-            matches.append(proc)
-        except psutil.NoSuchProcess:
-            pass
-    except ValueError:
-        # Search by name
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                if proc.info['name'].lower() == name_or_pid.lower():
-                    matches.append(proc)
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
+        result = subprocess.run(
+            ['powershell', '-Command',
+             "Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 Id,Name,@{Name='CPU';Expression={$_.CPU.ToString('F1')}} | Format-Table -HideTableHeaders"],
+            capture_output=True, text=True, timeout=10
+        )
+        print("\nTop 5 CPU:")
+        if result.returncode == 0:
+            for line in result.stdout.strip().split('\n'):
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        print(f"PID: {parts[0]} | Name: {parts[1]} | CPU: {parts[2]}%")
+        
+        result = subprocess.run(
+            ['powershell', '-Command',
+             "Get-Process | Sort-Object WS -Descending | Select-Object -First 5 Id,Name,@{Name='RAM';Expression={[math]::Round($_.WS/1MB,2)}} | Format-Table -HideTableHeaders"],
+            capture_output=True, text=True, timeout=10
+        )
+        print("\nTop 5 RAM:")
+        if result.returncode == 0:
+            for line in result.stdout.strip().split('\n'):
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 3:
+                        print(f"PID: {parts[0]} | Name: {parts[1]} | RAM: {parts[2]} MB")
+    except Exception:
+        print("Error: Could not retrieve process information.")
+
+
+def process_kill(target):
+    """Kill process by PID or name"""
+    try:
+        if target.isdigit():
+            pid = int(target)
+            result = subprocess.run(
+                ['powershell', '-Command',
+                 f"Get-Process -Id {pid} -ErrorAction SilentlyContinue | Select-Object Id,Name | ConvertTo-Json"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                import json
+                proc = json.loads(result.stdout.strip())
+                response = input(f"Kill process {proc['Id']} {proc['Name']}? (y/n): ").lower().strip()
+                if response == 'y':
+                    subprocess.run(['taskkill', '/F', '/PID', str(pid)], capture_output=True, timeout=10)
+                    print(f"Process {pid} killed.")
+                else:
+                    print("Operation cancelled.")
+            else:
+                print("Process not found.")
+        else:
+            result = subprocess.run(
+                ['powershell', '-Command',
+                 f"Get-Process -Name '{target}' -ErrorAction SilentlyContinue | Select-Object Id,Name | ConvertTo-Json"],
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                import json
+                output = result.stdout.strip()
+                procs = json.loads(output)
+                if not isinstance(procs, list):
+                    procs = [procs]
+                
+                if len(procs) == 1:
+                    proc = procs[0]
+                    response = input(f"Kill process {proc['Id']} {proc['Name']}? (y/n): ").lower().strip()
+                    if response == 'y':
+                        subprocess.run(['taskkill', '/F', '/PID', str(proc['Id'])], capture_output=True, timeout=10)
+                        print(f"Process {proc['Id']} killed.")
+                    else:
+                        print("Operation cancelled.")
+                else:
+                    print(f"Multiple processes found matching {target}.")
+                    for proc in procs:
+                        print(f"PID: {proc['Id']} | Name: {proc['Name']}")
+                    response = input(f"Kill all {len(procs)} matching processes? (y/n): ").lower().strip()
+                    if response == 'y':
+                        for proc in procs:
+                            subprocess.run(['taskkill', '/F', '/PID', str(proc['Id'])], capture_output=True, timeout=10)
+                        print(f"All {len(procs)} processes killed.")
+                    else:
+                        print("Operation cancelled.")
+            else:
+                print("Process not found.")
+    except Exception as e:
+        print(f"Error: Could not kill process. {str(e)}")
+
+
+def service_list(status_filter=None):
+    """List services, optionally filtering by status (running or stopped)"""
     
-    if not matches:
-        print("Process not found.")
-        return
+    ps_command = "Get-Service"
+    header = ""
     
-    if len(matches) == 1:
-        proc = matches[0]
-        response = input(f"Kill process {proc.pid} {proc.name()}? (y/n): ").lower()
-        if response == 'y':
-            try:
-                proc.kill()
-                print(f"Process {proc.pid} killed.")
-            except Exception as e:
-                print(f"Error killing process: {e}")
+    if status_filter:
+        status_filter = status_filter.lower().strip()
+        if status_filter not in ['running', 'stopped']:
+            print("Error: Invalid status. Please use 'running' or 'stopped'.")
+            return
+        ps_status = status_filter.capitalize()
+        ps_command += f" | Where-Object {{$_.Status -eq '{ps_status}'}}"
+        header = f"--- {ps_status} Services ---"
     else:
-        print(f"Multiple processes found matching {name_or_pid}.")
-        for proc in matches:
-            print(f"PID: {proc.pid} | Name: {proc.name()}")
-        response = input(f"Kill all {len(matches)} matching processes? (y/n): ").lower()
-        if response == 'y':
-            for proc in matches:
-                try:
-                    proc.kill()
-                except Exception:
-                    pass
-            print(f"All {len(matches)} processes killed.")
+        header = "--- All Services ---"
+
+    # Select properties and convert to JSON
+    ps_command += " | Select-Object Name,Status,StartType | ConvertTo-Json"
+
+    try:
+        result = subprocess.run(
+            ['powershell', '-Command', ps_command],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            import json
+            output = result.stdout.strip()
+            services = json.loads(output)
+            if not isinstance(services, list):
+                services = [services]
+            
+            if services:
+                print(header)
+                for svc in services:
+                    print(f"Name: {svc['Name']} | Status: {svc['Status']} | Startup: {svc['StartType']}")
+            else:
+                print(f"No services found.")
+        else:
+            print(f"No services found.")
+    except Exception:
+        print("Error: Could not retrieve service information.")
 
 def service_status(service_name):
-    """Check service status"""
+    """Get service status"""
     try:
-        result = subprocess.run(['sc', 'query', 'state=', 'all'], 
-                              capture_output=True, text=True, timeout=30)
-        
-        lines = result.stdout.split('\n')
-        matches = []
-        current = {}
-        
-        for line in lines:
-            line = line.strip()
-            if line.startswith('SERVICE_NAME:'):
-                if current:
-                    matches.append(current)
-                name = line.split(':', 1)[1].strip()
-                if service_name.lower() in name.lower():
-                    current = {'name': name}
-                else:
-                    current = {}
-            elif current and line.startswith('STATE'):
-                parts = line.split(':', 1)[1].strip().split()
-                if parts:
-                    current['status'] = parts[1] if len(parts) > 1 else parts[0]
-            elif current and line.startswith('START_TYPE'):
-                current['startup'] = line.split(':', 1)[1].strip()
-        
-        if current:
-            matches.append(current)
-        
-        if not matches:
+        result = subprocess.run(
+            ['powershell', '-Command',
+             f"Get-Service | Where-Object {{$_.Name -like '*{service_name}*' -or $_.DisplayName -like '*{service_name}*'}} | Select-Object Name,Status,StartType | ConvertTo-Json"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            import json
+            output = result.stdout.strip()
+            services = json.loads(output)
+            if not isinstance(services, list):
+                services = [services]
+            
+            if services:
+                for svc in services:
+                    print(f"Name: {svc['Name']} | Status: {svc['Status']} | Startup: {svc['StartType']}")
+            else:
+                print("Service not found.")
+        else:
             print("Service not found.")
-            return
-        
-        for svc in matches:
-            print(f"Name: {svc['name']} | Status: {svc.get('status', 'Unknown')} | Startup: {svc.get('startup', 'Unknown')}")
-    
-    except Exception as e:
-        print(f"Error querying service: {e}")
+    except Exception:
+        print("Error: Could not retrieve service information.")
+
 
 def service_stop(service_name):
     """Stop a service"""
     try:
-        result = subprocess.run(['sc', 'stop', service_name], 
-                              capture_output=True, text=True, timeout=30)
+        result = subprocess.run(
+            ['powershell', '-Command',
+             f"Stop-Service -Name '{service_name}' -Force -ErrorAction Stop"],
+            capture_output=True, text=True, timeout=30
+        )
         if result.returncode == 0:
             print(f"Service {service_name} stopped.")
         else:
@@ -302,11 +347,15 @@ def service_stop(service_name):
     except Exception:
         print("Error: Could not stop service.")
 
+
 def service_disable(service_name):
     """Disable a service"""
     try:
-        result = subprocess.run(['sc', 'config', service_name, 'start=', 'disabled'], 
-                              capture_output=True, text=True, timeout=30)
+        result = subprocess.run(
+            ['powershell', '-Command',
+             f"Set-Service -Name '{service_name}' -StartupType Disabled -ErrorAction Stop"],
+            capture_output=True, text=True, timeout=30
+        )
         if result.returncode == 0:
             print(f"Service {service_name} startup type set to Disabled.")
         else:
@@ -314,68 +363,101 @@ def service_disable(service_name):
     except Exception:
         print("Error: Could not disable service.")
 
+
 def main():
-    parser = argparse.ArgumentParser(description='unsqueeze - Windows System Maintenance Utility')
-    subparsers = parser.add_subparsers(dest='command', help='Command category')
+    if len(sys.argv) < 2:
+        print("Usage: unsqueeze <command> [options]")
+        print("\nCommands:")
+        print("  disk      - File & Disk operations")
+        print("  process   - Process operations")
+        print("  service   - Service operations")
+        return
     
-    # Disk commands
-    disk_parser = subparsers.add_parser('disk', help='File and disk operations')
-    disk_parser.add_argument('--analyze-temp', action='store_true', help='Analyze temp folder sizes')
-    disk_parser.add_argument('--clean-temp', action='store_true', help='Clean temp folders')
-    disk_parser.add_argument('--analyze-bin', action='store_true', help='Analyze Recycle Bin size')
-    disk_parser.add_argument('--empty-bin', action='store_true', help='Empty Recycle Bin')
-    disk_parser.add_argument('--find-large', action='store_true', help='Find large files in Downloads')
+    command = sys.argv[1].lower()
     
-    # Process commands
-    process_parser = subparsers.add_parser('process', help='Process operations')
-    process_parser.add_argument('--top', action='store_true', help='Show top processes')
-    process_parser.add_argument('--kill', metavar='NAME_OR_PID', help='Kill process by name or PID')
-    
-    # Service commands
-    service_parser = subparsers.add_parser('service', help='Service operations')
-    service_parser.add_argument('--status', metavar='SERVICE_NAME', help='Check service status')
-    service_parser.add_argument('--stop', metavar='SERVICE_NAME', help='Stop service')
-    service_parser.add_argument('--disable', metavar='SERVICE_NAME', help='Disable service')
-    
-    args = parser.parse_args()
-    
-    if args.command == 'disk':
-        if args.analyze_temp:
+    if command == 'disk':
+        if len(sys.argv) < 3:
+            print("Usage: unsqueeze disk <option>")
+            print("Options: --analyze-temp, --clean-temp, --analyze-bin, --empty-bin, --find-large")
+            return
+        
+        option = sys.argv[2].lower()
+        if option == '--analyze-temp':
             analyze_temp()
-        elif args.clean_temp:
+            print("\nTo clean temp files, run: unsqueeze disk --clean-temp")
+        elif option == '--clean-temp':
             clean_temp()
-        elif args.analyze_bin:
+            print("\nTo check your recycle bin, run: unsqueeze disk --analyze-bin")
+        elif option == '--analyze-bin':
             analyze_bin()
-        elif args.empty_bin:
+            print("\nTo empty the recycle bin, run: unsqueeze disk --empty-bin")
+        elif option == '--empty-bin':
             empty_bin()
-        elif args.find_large:
+            print("\nTo find large files in your Downloads, run: unsqueeze disk --find-large")
+        elif option == '--find-large':
             find_large()
         else:
-            disk_parser.print_help()
+            print(f"Unknown option: {option}")
     
-    elif args.command == 'process':
-        if args.top:
-            process_top()
-        elif args.kill:
-            process_kill(args.kill)
-        else:
-            process_parser.print_help()
-    
-    elif args.command == 'service':
-        if not is_admin():
-            print("Warning: Service operations require administrator privileges.")
+    elif command == 'process':
+        if len(sys.argv) < 3:
+            print("Usage: unsqueeze process <option>")
+            print("Options: --top, --kill <name_or_pid>")
+            return
         
-        if args.status:
-            service_status(args.status)
-        elif args.stop:
-            service_stop(args.stop)
-        elif args.disable:
-            service_disable(args.disable)
+        option = sys.argv[2].lower()
+        if option == '--top':
+            process_top()
+            print("\nTo kill a process, run: unsqueeze process --kill <name_or_pid>")
+        elif option == '--kill':
+            if len(sys.argv) < 4:
+                print("Usage: unsqueeze process --kill <name_or_pid>")
+                return
+            process_kill(sys.argv[3])
+            print("\nTo see the top processes again, run: unsqueeze process --top")
         else:
-            service_parser.print_help()
+            print(f"Unknown option: {option}")
+    
+    elif command == 'service':
+        if len(sys.argv) < 3:
+            print("Usage: unsqueeze service <option>")
+            print("Options: --list [running|stopped], --status <service_name>, --stop <exact_service_name>, --disable <exact_service_name>")
+            return
+        
+        option = sys.argv[2].lower()
+
+        if option == '--list':
+            # Check if a filter (like 'running') was provided
+            status_arg = sys.argv[3] if len(sys.argv) >= 4 else None
+            service_list(status_arg)
+            print(f"\nTo check a specific service, run: unsqueeze service --status <service_name>")
+        elif option == '--status':
+            if len(sys.argv) < 4:
+                print("Usage: unsqueeze service --status <service_name>")
+                return
+            service_status(sys.argv[3])
+            print("\nTo stop a service, run: unsqueeze service --stop <exact_name>")
+            print("To disable a service, run: unsqueeze service --disable <exact_name>")
+        elif option == '--stop':
+            if len(sys.argv) < 4:
+                print("Usage: unsqueeze service --stop <exact_service_name>")
+                return
+            service_name = sys.argv[3]
+            service_stop(service_name)
+            print(f"\nTo also disable this service, run: unsqueeze service --disable {service_name}")
+        elif option == '--disable':
+            if len(sys.argv) < 4:
+                print("Usage: unsqueeze service --disable <exact_service_name>")
+                return
+            service_name = sys.argv[3]
+            service_disable(service_name)
+            print(f"\nTo check the status, run: unsqueeze service --status {service_name}")
+        else:
+            print(f"Unknown option: {option}")
     
     else:
-        parser.print_help()
+        print(f"Unknown command: {command}")
+        print("Available commands: disk, process, service")
 
 if __name__ == '__main__':
     main()
