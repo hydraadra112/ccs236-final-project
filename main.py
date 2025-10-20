@@ -341,12 +341,16 @@ def main():
         option = sys.argv[2].lower()
         if option == '--analyze-temp':
             analyze_temp()
+            print("\nTo clean temp files, run: unsqueeze disk --clean-temp")
         elif option == '--clean-temp':
             clean_temp()
+            print("\nTo check your recycle bin, run: unsqueeze disk --analyze-bin")
         elif option == '--analyze-bin':
             analyze_bin()
+            print("\nTo empty the recycle bin, run: unsqueeze disk --empty-bin")
         elif option == '--empty-bin':
             empty_bin()
+            print("\nTo find large files in your Downloads, run: unsqueeze disk --find-large")
         elif option == '--find-large':
             find_large()
         else:
@@ -361,11 +365,13 @@ def main():
         option = sys.argv[2].lower()
         if option == '--top':
             process_top()
+            print("\nTo kill a process, run: unsqueeze process --kill <name_or_pid>")
         elif option == '--kill':
             if len(sys.argv) < 4:
                 print("Usage: unsqueeze process --kill <name_or_pid>")
                 return
             process_kill(sys.argv[3])
+            print("\nTo see the top processes again, run: unsqueeze process --top")
         else:
             print(f"Unknown option: {option}")
     
@@ -381,23 +387,28 @@ def main():
                 print("Usage: unsqueeze service --status <service_name>")
                 return
             service_status(sys.argv[3])
+            print("\nTo stop a service, run: unsqueeze service --stop <exact_name>")
+            print("To disable a service, run: unsqueeze service --disable <exact_name>")
         elif option == '--stop':
             if len(sys.argv) < 4:
                 print("Usage: unsqueeze service --stop <exact_service_name>")
                 return
-            service_stop(sys.argv[3])
+            service_name = sys.argv[3]
+            service_stop(service_name)
+            print(f"\nTo also disable this service, run: unsqueeze service --disable {service_name}")
         elif option == '--disable':
             if len(sys.argv) < 4:
                 print("Usage: unsqueeze service --disable <exact_service_name>")
                 return
-            service_disable(sys.argv[3])
+            service_name = sys.argv[3]
+            service_disable(service_name)
+            print(f"\nTo check the status, run: unsqueeze service --status {service_name}")
         else:
             print(f"Unknown option: {option}")
     
     else:
         print(f"Unknown command: {command}")
         print("Available commands: disk, process, service")
-
 
 if __name__ == '__main__':
     main()
