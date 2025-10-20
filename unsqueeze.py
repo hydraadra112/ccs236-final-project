@@ -263,6 +263,49 @@ def process_kill(target):
         print(f"Error: Could not kill process. {str(e)}")
 
 
+def service_list(status_filter=None):
+    """List services, optionally filtering by status (running or stopped)"""
+    
+    ps_command = "Get-Service"
+    header = ""
+    
+    if status_filter:
+        status_filter = status_filter.lower().strip()
+        if status_filter not in ['running', 'stopped']:
+            print("Error: Invalid status. Please use 'running' or 'stopped'.")
+            return
+        ps_status = status_filter.capitalize()
+        ps_command += f" | Where-Object {{$_.Status -eq '{ps_status}'}}"
+        header = f"--- {ps_status} Services ---"
+    else:
+        header = "--- All Services ---"
+
+    # Select properties and convert to JSON
+    ps_command += " | Select-Object Name,Status,StartType | ConvertTo-Json"
+
+    try:
+        result = subprocess.run(
+            ['powershell', '-Command', ps_command],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            import json
+            output = result.stdout.strip()
+            services = json.loads(output)
+            if not isinstance(services, list):
+                services = [services]
+            
+            if services:
+                print(header)
+                for svc in services:
+                    print(f"Name: {svc['Name']} | Status: {svc['Status']} | Startup: {svc['StartType']}")
+            else:
+                print(f"No services found.")
+        else:
+            print(f"No services found.")
+    except Exception:
+        print("Error: Could not retrieve service information.")
+
 def service_status(service_name):
     """Get service status"""
     try:
@@ -378,11 +421,17 @@ def main():
     elif command == 'service':
         if len(sys.argv) < 3:
             print("Usage: unsqueeze service <option>")
-            print("Options: --status <service_name>, --stop <exact_service_name>, --disable <exact_service_name>")
+            print("Options: --list [running|stopped], --status <service_name>, --stop <exact_service_name>, --disable <exact_service_name>")
             return
         
         option = sys.argv[2].lower()
-        if option == '--status':
+
+        if option == '--list':
+            # Check if a filter (like 'running') was provided
+            status_arg = sys.argv[3] if len(sys.argv) >= 4 else None
+            service_list(status_arg)
+            print(f"\nTo check a specific service, run: unsqueeze service --status <service_name>")
+        elif option == '--status':
             if len(sys.argv) < 4:
                 print("Usage: unsqueeze service --status <service_name>")
                 return
