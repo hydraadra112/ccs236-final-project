@@ -16,6 +16,7 @@ from operations.process import (
 
 from operations.service import (
     service_disable,
+    service_list,
     service_status,
     service_stop
 )
@@ -77,11 +78,17 @@ def main():
     elif command == 'service':
         if len(sys.argv) < 3:
             print("Usage: unsqueeze service <option>")
-            print("Options: --status <service_name>, --stop <exact_service_name>, --disable <exact_service_name>")
+            print("Options: --list [running|stopped], --status <service_name>, --stop <exact_service_name>, --disable <exact_service_name>")
             return
         
         option = sys.argv[2].lower()
-        if option == '--status':
+        if option == '--list':
+            # Check if a filter (like 'running') was provided
+            status_arg = sys.argv[3] if len(sys.argv) >= 4 else None
+            service_list(status_arg)
+            print(f"\nTo check a specific service, run: unsqueeze service --status <service_name>")
+        
+        elif option == '--status':
             if len(sys.argv) < 4:
                 print("Usage: unsqueeze service --status <service_name>")
                 return
