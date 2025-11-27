@@ -21,100 +21,130 @@ from operations.service import (
     service_stop
 )
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: unsqueeze <command> [options]")
-        print("\nCommands:")
-        print("  disk      - File & Disk operations")
-        print("  process   - Process operations")
-        print("  service   - Service operations")
-        return
-    
-    command = sys.argv[1].lower()
-    
-    if command == 'disk':
-        if len(sys.argv) < 3:
-            print("Usage: unsqueeze disk <option>")
-            print("Options: --analyze-temp, --clean-temp, --analyze-bin, --empty-bin, --find-large")
-            return
+def wait_for_user():
+    """Helper to pause execution so user can read output"""
+    input("\nPress Enter to continue...")
+
+def menu_disk():
+    while True:
+        print("\n--- Disk Operations ---")
+        print("1. Analyze Temp Files")
+        print("2. Clean Temp Files")
+        print("3. Analyze Recycle Bin")
+        print("4. Empty Recycle Bin")
+        print("5. Find Large Files (Downloads)")
+        print("0. Back to Main Menu")
         
-        option = sys.argv[2].lower()
-        if option == '--analyze-temp':
+        choice = input("\nEnter choice: ").strip()
+        
+        if choice == '1':
             analyze_temp()
-            print("\nTo clean temp files, run: unsqueeze disk --clean-temp")
-        elif option == '--clean-temp':
+            wait_for_user()
+        elif choice == '2':
             clean_temp()
-            print("\nTo check your recycle bin, run: unsqueeze disk --analyze-bin")
-        elif option == '--analyze-bin':
+            wait_for_user()
+        elif choice == '3':
             analyze_bin()
-            print("\nTo empty the recycle bin, run: unsqueeze disk --empty-bin")
-        elif option == '--empty-bin':
+            wait_for_user()
+        elif choice == '4':
             empty_bin()
-            print("\nTo find large files in your Downloads, run: unsqueeze disk --find-large")
-        elif option == '--find-large':
+            wait_for_user()
+        elif choice == '5':
             find_large()
+            wait_for_user()
+        elif choice == '0':
+            break
         else:
-            print(f"Unknown option: {option}")
-    
-    elif command == 'process':
-        if len(sys.argv) < 3:
-            print("Usage: unsqueeze process <option>")
-            print("Options: --top, --kill <name_or_pid>")
-            return
+            print("Invalid option, please try again.")
+
+def menu_process():
+    while True:
+        print("\n--- Process Operations ---")
+        print("1. View Top Processes (CPU/RAM)")
+        print("2. Kill Process")
+        print("0. Back to Main Menu")
         
-        option = sys.argv[2].lower()
-        if option == '--top':
+        choice = input("\nEnter choice: ").strip()
+        
+        if choice == '1':
             process_top()
-            print("\nTo kill a process, run: unsqueeze process --kill <name_or_pid>")
-        elif option == '--kill':
-            if len(sys.argv) < 4:
-                print("Usage: unsqueeze process --kill <name_or_pid>")
-                return
-            process_kill(sys.argv[3])
-            print("\nTo see the top processes again, run: unsqueeze process --top")
+            wait_for_user()
+        elif choice == '2':
+            target = input("Enter Process Name or PID to kill: ").strip()
+            if target:
+                process_kill(target)
+            else:
+                print("Operation cancelled.")
+            wait_for_user()
+        elif choice == '0':
+            break
         else:
-            print(f"Unknown option: {option}")
-    
-    elif command == 'service':
-        if len(sys.argv) < 3:
-            print("Usage: unsqueeze service <option>")
-            print("Options: --list [running|stopped], --status <service_name>, --stop <exact_service_name>, --disable <exact_service_name>")
-            return
+            print("Invalid option, please try again.")
+
+def menu_service():
+    while True:
+        print("\n--- Service Operations ---")
+        print("1. List Services")
+        print("2. Check Service Status")
+        print("3. Stop Service")
+        print("4. Disable Service")
+        print("0. Back to Main Menu")
         
-        option = sys.argv[2].lower()
-        if option == '--list':
-            # Check if a filter (like 'running') was provided
-            status_arg = sys.argv[3] if len(sys.argv) >= 4 else None
-            service_list(status_arg)
-            print(f"\nTo check a specific service, run: unsqueeze service --status <service_name>")
+        choice = input("\nEnter choice: ").strip()
         
-        elif option == '--status':
-            if len(sys.argv) < 4:
-                print("Usage: unsqueeze service --status <service_name>")
-                return
-            service_status(sys.argv[3])
-            print("\nTo stop a service, run: unsqueeze service --stop <exact_name>")
-            print("To disable a service, run: unsqueeze service --disable <exact_name>")
-        elif option == '--stop':
-            if len(sys.argv) < 4:
-                print("Usage: unsqueeze service --stop <exact_service_name>")
-                return
-            service_name = sys.argv[3]
-            service_stop(service_name)
-            print(f"\nTo also disable this service, run: unsqueeze service --disable {service_name}")
-        elif option == '--disable':
-            if len(sys.argv) < 4:
-                print("Usage: unsqueeze service --disable <exact_service_name>")
-                return
-            service_name = sys.argv[3]
-            service_disable(service_name)
-            print(f"\nTo check the status, run: unsqueeze service --status {service_name}")
+        if choice == '1':
+            filter_opt = input("Filter (running/stopped/all) [default: all]: ").strip().lower()
+            if filter_opt not in ['running', 'stopped']:
+                filter_opt = None
+            service_list(filter_opt)
+            wait_for_user()
+        elif choice == '2':
+            name = input("Enter Service Name (fuzzy search): ").strip()
+            if name:
+                service_status(name)
+            wait_for_user()
+        elif choice == '3':
+            name = input("Enter EXACT Service Name to stop: ").strip()
+            if name:
+                service_stop(name)
+            wait_for_user()
+        elif choice == '4':
+            name = input("Enter EXACT Service Name to disable: ").strip()
+            if name:
+                service_disable(name)
+            wait_for_user()
+        elif choice == '0':
+            break
         else:
-            print(f"Unknown option: {option}")
-    
-    else:
-        print(f"Unknown command: {command}")
-        print("Available commands: disk, process, service")
+            print("Invalid option, please try again.")
+
+def main():
+    while True:
+        print("\n========================================")
+        print("   Unsqueeze: System Optimizer Tool")
+        print("========================================")
+        print("1. Disk Operations")
+        print("2. Process Operations")
+        print("3. Service Operations")
+        print("0. Exit")
+        
+        choice = input("\nEnter choice: ").strip()
+        
+        if choice == '1':
+            menu_disk()
+        elif choice == '2':
+            menu_process()
+        elif choice == '3':
+            menu_service()
+        elif choice == '0':
+            print("Exiting Unsqueeze...")
+            sys.exit(0)
+        else:
+            print("Invalid choice. Please enter 0-3.")
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nProgram interrupted by user. Exiting...")
+        sys.exit(0)
