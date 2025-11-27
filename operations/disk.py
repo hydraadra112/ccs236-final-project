@@ -1,7 +1,7 @@
 import os
 import shutil
 import subprocess
-from ..utils import format_size
+from .utils import format_size
 
 def get_folder_size(folder_path):
     """Calculate total size of a folder"""
