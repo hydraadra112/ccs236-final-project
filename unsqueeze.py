@@ -7,7 +7,8 @@ from operations.disk import (
     clean_temp,
     analyze_temp,
     empty_bin,
-    find_large)
+    find_large,
+    clean_custom_dir) # Imported the new function here
 
 from operations.process import (
     process_kill,
@@ -33,6 +34,7 @@ def menu_disk():
         print("3. Analyze Recycle Bin")
         print("4. Empty Recycle Bin")
         print("5. Find Large Files (Downloads)")
+        print("6. Clean Custom Directory") # New Menu Item
         print("0. Back to Main Menu")
         
         choice = input("\nEnter choice: ").strip()
@@ -51,6 +53,13 @@ def menu_disk():
             wait_for_user()
         elif choice == '5':
             find_large()
+            wait_for_user()
+        elif choice == '6':
+            path = input("Enter full path to directory: ").strip()
+            if path:
+                clean_custom_dir(path)
+            else:
+                print("No path entered.")
             wait_for_user()
         elif choice == '0':
             break

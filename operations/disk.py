@@ -99,34 +99,35 @@ def empty_bin():
     except Exception:
         print("Error: Could not empty Recycle Bin.")
 
+# --- NEW SHARED LOGIC ---
 
-def find_large():
-    """Find and optionally delete large files in Downloads"""
-    downloads = os.path.join(os.environ.get('USERPROFILE', ''), 'Downloads')
-    if not os.path.exists(downloads):
-        print("Error: Downloads folder not found.")
+def _scan_and_clean_interactive(target_dir):
+    """Internal helper to scan a directory and offer cleanup options"""
+    if not os.path.exists(target_dir):
+        print(f"Error: Directory not found: {target_dir}")
         return
-    
+
+    print(f"Scanning: {target_dir}...")
     files = []
     try:
-        for entry in os.scandir(downloads):
+        for entry in os.scandir(target_dir):
             if entry.is_file():
                 try:
                     files.append((entry.path, entry.stat().st_size, entry.name))
                 except (PermissionError, FileNotFoundError, OSError):
                     continue
     except (PermissionError, OSError):
-        print("Error: Cannot access Downloads folder.")
+        print("Error: Cannot access directory.")
         return
     
     files.sort(key=lambda x: x[1], reverse=True)
     top_10 = files[:10]
     
     if not top_10:
-        print("No files found in Downloads.")
+        print("No files found.")
         return
     
-    print("\nTop 10 largest files in Downloads:")
+    print(f"\nTop 10 largest files in {os.path.basename(target_dir)}:")
     for i, (path, size, name) in enumerate(top_10, 1):
         print(f"[{i}] {format_size(size)} - {name}")
     
@@ -156,3 +157,13 @@ def find_large():
     else:
         print("Invalid choice.")
 
+def find_large():
+    """Find and optionally delete large files in Downloads"""
+    downloads = os.path.join(os.environ.get('USERPROFILE', ''), 'Downloads')
+    _scan_and_clean_interactive(downloads)
+
+def clean_custom_dir(path):
+    """Find and optionally delete large files in a custom directory"""
+    # Remove quotes if user copied path as "C:\Path"
+    clean_path = path.strip('"').strip("'")
+    _scan_and_clean_interactive(clean_path)
